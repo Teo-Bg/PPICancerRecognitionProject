@@ -1,3 +1,7 @@
+﻿using Microsoft.Data.SqlClient;
+using PPICancerRecognitionProject.domain;
+using PPICancerRecognitionProject.repository;
+
 namespace PPICancerRecognitionProject
 {
     internal static class Program
@@ -8,9 +12,16 @@ namespace PPICancerRecognitionProject
         [STAThread]
         static void Main()
         {
-            // To customize application configuration such as set high DPI settings or default font,
-            // see https://aka.ms/applicationconfiguration.
-            ApplicationConfiguration.Initialize();
+            
+
+           
+
+                ApplicationConfiguration.Initialize();
+
+
+                
+
+            // Continue to your main form
             Application.Run(new Form1());
         }
     }
