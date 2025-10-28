@@ -52,7 +52,7 @@ namespace PPICancerRecognitionProject.repository
             File.WriteAllBytes(fullFilePath, imageBytes);
 
             // Step 4️⃣: Store relative path
-            output.RelativePath = Path.Combine(scanFileCode, fileName);
+            output.RelativePath = Path.Combine("outputs",scanFileCode, fileName);
 
             // Step 5️⃣: Insert into DB
             using (var connection = new SqlConnection(_connectionString))
