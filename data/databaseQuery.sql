@@ -36,3 +36,21 @@ GO
 CREATE INDEX IX_CTScans_PatientID ON CTScans(PatientID);
 CREATE INDEX IX_AIOutputs_ScanID ON AI_Model_Outputs(ScanID);
 GO
+
+
+USE MedicalImagingDB;
+GO
+
+
+ALTER TABLE AI_Model_Outputs
+    ADD PredictedTypes NVARCHAR(MAX) NULL,
+        PredictedClass NVARCHAR(255) NULL,
+        TypeProbabilities NVARCHAR(MAX) NULL,
+        ClassProbabilities NVARCHAR(MAX) NULL;
+GO
+
+SELECT COLUMN_NAME
+
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'AI_Model_Outputs'
+ORDER BY COLUMN_NAME;

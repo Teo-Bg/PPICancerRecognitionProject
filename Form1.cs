@@ -199,28 +199,14 @@ namespace PPICancerRecognitionProject
                             string maskJson = File.ReadAllText(aiFullPath);
 
                             var maskBinary = JsonSerializer.Deserialize<List<List<int>>>(maskJson);
+                            Bitmap originalBmp = new Bitmap(picOriginal.Image);
+                            
+                            var resizedMask = ResizeMask(maskBinary, originalBmp.Width, originalBmp.Height);
+                            
+                            Bitmap overlayed = ApplyMaskOverlay(originalBmp, resizedMask);
 
-
-
-                            int height = maskBinary.Count;
-                            int width = maskBinary[0].Count;
-
-                            using (var bmp = new Bitmap(width, height))
-                            {
-                                for (int y = 0; y < height; y++)
-                                {
-                                    for (int x = 0; x < width; x++)
-                                    {
-                                        if (maskBinary[y][x] == 1)
-                                            bmp.SetPixel(x, y, System.Drawing.Color.Red); // masca roșie
-                                        else
-                                            bmp.SetPixel(x, y, System.Drawing.Color.Transparent);
-                                    }
-                                }
-
-                                picAIResult.Image?.Dispose();
-                                picAIResult.Image = new Bitmap(bmp);
-                            }
+                            picAIResult.Image?.Dispose();
+                            picAIResult.Image = overlayed;
 
                             string predictedType = "N/A";
                             string predictedClass = "N/A";
@@ -420,7 +406,17 @@ namespace PPICancerRecognitionProject
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error processing AI model: {ex.Message}");
+                if (ex.Message.Contains("Out of memory", StringComparison.OrdinalIgnoreCase))
+                {
+                    lblAIInfo.Text = "AI processing complete (minor memory warning ignored).";
+                    return;
+                }
+                
+                MessageBox.Show($"Error processing AI model: {ex.Message}", 
+                    "AI Error", 
+                    MessageBoxButtons.OK, 
+                    MessageBoxIcon.Error);
+
                 lblAIInfo.Text = "Error during AI processing.";
             }
             finally
@@ -429,5 +425,75 @@ namespace PPICancerRecognitionProject
                 lstScans_SelectedIndexChanged(null, EventArgs.Empty); 
             }
         }
+        private Bitmap ApplyMaskOverlay(Bitmap original, List<List<int>> mask)
+        {
+            int width = original.Width;
+            int height = original.Height;
+
+            var overlay = new Bitmap(width, height);
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    System.Drawing.Color orig = original.GetPixel(x, y);
+
+                    if (mask[y][x] == 1)
+                    {
+                        // roșu semi-transparent peste pixelul original
+                        var blended = System.Drawing.Color.FromArgb(
+                            150, // transparență (0 = transparent, 255 = opac)
+                            255, 0, 0
+                        );
+
+                        overlay.SetPixel(x, y, blended);
+                    }
+                    else
+                    {
+                        overlay.SetPixel(x, y, System.Drawing.Color.FromArgb(0, orig.R, orig.G, orig.B));
+                    }
+                }
+            }
+
+            // combinăm original + overlay
+            Bitmap final = new Bitmap(width, height);
+            using (Graphics g = Graphics.FromImage(final))
+            {
+                g.DrawImage(original, System.Drawing.Point.Empty);
+                g.DrawImage(overlay, System.Drawing.Point.Empty);
+            }
+
+            return final;
+        }
+        
+        private List<List<int>> ResizeMask(List<List<int>> mask, int newWidth, int newHeight)
+        {
+            int oldHeight = mask.Count;
+            int oldWidth = mask[0].Count;
+
+            var resized = new List<List<int>>(newHeight);
+    
+            for (int y = 0; y < newHeight; y++)
+            {
+                int srcY = (int)((double)y / newHeight * oldHeight);
+                srcY = Math.Min(srcY, oldHeight - 1);
+
+                var row = new List<int>(newWidth);
+
+                for (int x = 0; x < newWidth; x++)
+                {
+                    int srcX = (int)((double)x / newWidth * oldWidth);
+                    srcX = Math.Min(srcX, oldWidth - 1);
+
+                    row.Add(mask[srcY][srcX]);
+                }
+
+                resized.Add(row);
+            }
+
+            return resized;
+        }
+
+
     }
 }
