@@ -1,19 +1,20 @@
-﻿using System;
+﻿using FellowOakDicom;
+using FellowOakDicom.Imaging;
+using FellowOakDicom.Imaging.ImageSharp;
+using PPICancerRecognitionProject.domain;
+using PPICancerRecognitionProject.repository;
+using PPICancerRecognitionProject.service;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.PixelFormats;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
-using PPICancerRecognitionProject.domain;
-using PPICancerRecognitionProject.repository;
-using FellowOakDicom;
-using FellowOakDicom.Imaging;
-using FellowOakDicom.Imaging.ImageSharp;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.PixelFormats;
-using FellowOakDicom.Imaging.ImageSharp;
+using System.Text.Json;
 namespace PPICancerRecognitionProject
 
 {
@@ -24,25 +25,30 @@ namespace PPICancerRecognitionProject
         private readonly AIModelOutputRepository _aiRepo;
         private readonly string _aiOutputPath;
         private readonly string _projectBasePath;
+        private readonly AIModelService _aiService;
+        private readonly string _aiApiUrl = "http://localhost:8000/predict/";  // Setează corect URL-ul API-ului
+        private readonly string _aiApiUrl_full = "http://localhost:8000/predict-full/";
 
         public Form1()
         {
             InitializeComponent();
-            
+
 
             // change connectionString
             string connectionString = "Server=localhost\\SQLEXPRESS;Database=MedicalImagingDB;Trusted_Connection=True;TrustServerCertificate=True;";
-            // change path
-            _projectBasePath = "C:\\Users\\Miha\\Desktop\\MPP\\PPICancerRecognitionProject";
+
+            _projectBasePath = "C:\\Facultate\\AplicatieAi\\PPICancerRecognitionProject";
             _aiOutputPath = Path.Combine(_projectBasePath, "outputs");
 
             _patientRepo = new PatientRepository(connectionString);
             _scanRepo = new CTScanRepository(connectionString);
             _aiRepo = new AIModelOutputRepository(connectionString, _aiOutputPath);
 
+            _aiService = new AIModelService(_aiRepo, _aiApiUrl, _aiApiUrl_full,  _aiOutputPath);
+
             LoadPatients();
         }
-        
+
         private void LoadPatients()
         {
             lstPatients.Items.Clear();
@@ -52,7 +58,7 @@ namespace PPICancerRecognitionProject
                 lstPatients.Items.Add($"{p.PatientID}: {p.FirstName} {p.LastName}");
         }
 
-        // select patient - show scans
+    
         private void lstPatients_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (lstPatients.SelectedItem == null) return;
@@ -74,7 +80,7 @@ namespace PPICancerRecognitionProject
             }
         }
 
-        // select a scan - show image(s)
+      
         private void lstScans_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (lstScans.SelectedItem == null)
@@ -83,7 +89,6 @@ namespace PPICancerRecognitionProject
                 return;
             }
 
-            // Reset UI
             picOriginal.Image = null;
             picAIResult.Image = null;
             lblAIInfo.Text = "";
@@ -91,13 +96,18 @@ namespace PPICancerRecognitionProject
 
             try
             {
-                // Parse scan ID from list item
+            
                 string selectedText = lstScans.SelectedItem.ToString();
                 Console.WriteLine($"Selected item text: {selectedText}");
                 int scanId = int.Parse(selectedText.Split(':')[0]);
 
                 var scan = _scanRepo.GetById(scanId);
                 var outputs = _aiRepo.GetByScanId(scanId);
+
+       
+                picAIResult.Image = null;
+                lblAIInfo.Text = "";
+                btnGenerateAI.Visible = false;
 
                 if (scan == null)
                 {
@@ -108,12 +118,11 @@ namespace PPICancerRecognitionProject
 
                 Console.WriteLine($"Loaded scan from DB: ID={scan.ScanID}, FileCode={scan.FileCode}, Path={scan.RelativePath}");
 
-                // Full path to scan file
+           
                 string scanFullPath = Path.Combine(_projectBasePath, scan.RelativePath);
                 Console.WriteLine($"Full scan path: {scanFullPath}");
-                Console.WriteLine($"Project base path: {_projectBasePath}");
 
-                // Check file existence
+         
                 if (!File.Exists(scanFullPath))
                 {
                     Console.WriteLine("File does not exist at path above.");
@@ -124,7 +133,7 @@ namespace PPICancerRecognitionProject
                     Console.WriteLine($"File exists: {scanFullPath}");
                     Console.WriteLine($"Extension: {Path.GetExtension(scanFullPath)}");
 
-                    // Handle DICOM
+       
                     if (Path.GetExtension(scanFullPath).Equals(".dcm", StringComparison.OrdinalIgnoreCase))
                     {
                         try
@@ -133,19 +142,18 @@ namespace PPICancerRecognitionProject
 
                             var dicomImage = new DicomImage(scanFullPath);
                             using (var imageSharp = dicomImage.RenderImage().AsSharpImage())
+                            using (var ms = new MemoryStream())
                             {
-                                Console.WriteLine("Rendered ImageSharp DICOM image successfully.");
-                                using (var ms = new MemoryStream())
+                                imageSharp.Save(ms, new SixLabors.ImageSharp.Formats.Png.PngEncoder());
+                                ms.Position = 0;
+
+                                using (var tmp = System.Drawing.Image.FromStream(ms))
                                 {
-                                    imageSharp.Save(ms, new SixLabors.ImageSharp.Formats.Png.PngEncoder());
-                                    ms.Position = 0;
-                                    using (var tmp = System.Drawing.Image.FromStream(ms))
-                                    {
-                                        picOriginal.Image?.Dispose();
-                                        picOriginal.Image = new Bitmap(tmp);
-                                    }
-                                    Console.WriteLine("Converted ImageSharp image → Bitmap → displayed.");
+                                    picOriginal.Image?.Dispose();
+                                    picOriginal.Image = new Bitmap(tmp);
                                 }
+
+                                Console.WriteLine("DICOM rendered and displayed successfully.");
                             }
                         }
                         catch (Exception dex)
@@ -172,11 +180,11 @@ namespace PPICancerRecognitionProject
                     }
                 }
 
-                // ---------- AI OUTPUT SECTION ----------
                 Console.WriteLine("---- Checking for AI Output ----");
-                if (outputs.Count > 0)
+                if(outputs.Count > 0)
                 {
                     Console.WriteLine($"Found {outputs.Count} AI output(s) in DB.");
+
                     var output = outputs.First();
                     string aiFullPath = Path.Combine(_projectBasePath, output.RelativePath);
                     Console.WriteLine($"Full AI path: {aiFullPath}");
@@ -185,9 +193,80 @@ namespace PPICancerRecognitionProject
                     {
                         try
                         {
-                            Console.WriteLine("Loading AI result image...");
-                            picAIResult.Image = System.Drawing.Image.FromFile(aiFullPath);
-                            lblAIInfo.Text = "Extracted features: textures ✓ keypoints ✓ shape ✓ intensity ✓ classification ✓";
+                            Console.WriteLine("Loading AI mask binary...");
+
+           
+                            string maskJson = File.ReadAllText(aiFullPath);
+
+                            var maskBinary = JsonSerializer.Deserialize<List<List<int>>>(maskJson);
+
+
+
+                            int height = maskBinary.Count;
+                            int width = maskBinary[0].Count;
+
+                            using (var bmp = new Bitmap(width, height))
+                            {
+                                for (int y = 0; y < height; y++)
+                                {
+                                    for (int x = 0; x < width; x++)
+                                    {
+                                        if (maskBinary[y][x] == 1)
+                                            bmp.SetPixel(x, y, System.Drawing.Color.Red); // masca roșie
+                                        else
+                                            bmp.SetPixel(x, y, System.Drawing.Color.Transparent);
+                                    }
+                                }
+
+                                picAIResult.Image?.Dispose();
+                                picAIResult.Image = new Bitmap(bmp);
+                            }
+
+                            string predictedType = "N/A";
+                            string predictedClass = "N/A";
+
+                            if (!string.IsNullOrEmpty(output.TypeProbabilities))
+                            {
+                                try
+                                {
+                                    var typeProbs = JsonSerializer.Deserialize<Dictionary<string, double>>(output.TypeProbabilities);
+                                    if (typeProbs != null && typeProbs.Count > 0)
+                                    {
+                                        predictedType = typeProbs.OrderByDescending(kv => kv.Value).First().Key;
+                                    }
+                                }
+                                catch
+                                {
+                                    predictedType = output.PredictedTypes ?? "N/A";
+                                }
+                            }
+                            else
+                            {
+                                predictedType = output.PredictedTypes ?? "N/A";
+                            }
+
+                            if (!string.IsNullOrEmpty(output.ClassProbabilities))
+                            {
+                                try
+                                {
+                                    var classProbs = JsonSerializer.Deserialize<Dictionary<string, double>>(output.ClassProbabilities);
+                                    if (classProbs != null && classProbs.Count > 0)
+                                    {
+                                        predictedClass = classProbs.OrderByDescending(kv => kv.Value).First().Key;
+                                    }
+                                }
+                                catch
+                                {
+                                    predictedClass = output.PredictedClass ?? "N/A";
+                                }
+                            }
+                            else
+                            {
+                                predictedClass = output.PredictedClass ?? "N/A";
+                            }
+
+                            lblAIInfo.Text = $"Predicted Type: {predictedType}\n" + $"Predicted Class: {predictedClass}";
+
                             Console.WriteLine("AI image loaded successfully.");
                         }
                         catch (Exception aiex)
@@ -201,52 +280,16 @@ namespace PPICancerRecognitionProject
                     {
                         Console.WriteLine("AI result file not found on disk.");
                         lblAIInfo.Text = "AI result not found on disk.";
+                        picAIResult.Image = null;
                     }
                 }
                 else
                 {
-                    Console.WriteLine("No AI outputs found in DB. Creating placeholder...");
+                    Console.WriteLine("No AI outputs found in DB.");
 
-                    string outputDir = Path.Combine(_projectBasePath, "outputs", scan.FileCode);
-                    Console.WriteLine($"Output directory: {outputDir}");
-                    Directory.CreateDirectory(outputDir);
-
-                    string placeholderPath = Path.Combine(outputDir, $"{scan.FileCode}_ai.png");
-                    Console.WriteLine($"Placeholder path: {placeholderPath}");
-
-                    if (!File.Exists(placeholderPath))
-                    {
-                        try
-                        {
-                            Console.WriteLine("Generating new placeholder image...");
-                            using (Bitmap bmp = new Bitmap(256, 256))
-                            using (Graphics g = Graphics.FromImage(bmp))
-                            {
-                                g.Clear(System.Drawing.Color.LightGreen);
-                                g.DrawString("No AI result yet", new Font("Arial", 14), Brushes.Black, new System.Drawing.PointF(40, 110));
-                                bmp.Save(placeholderPath, System.Drawing.Imaging.ImageFormat.Png);
-                            }
-                            Console.WriteLine("Placeholder image created successfully.");
-                        }
-                        catch (Exception pex)
-                        {
-                            Console.WriteLine("Failed to create placeholder image:");
-                            Console.WriteLine(pex.ToString());
-                        }
-                    }
-
-                    try
-                    {
-                        picAIResult.Image = System.Drawing.Image.FromFile(placeholderPath);
-                        lblAIInfo.Text = "No AI result available — placeholder shown.";
-                        btnGenerateAI.Visible = true;
-                        Console.WriteLine("Placeholder displayed successfully.");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("Failed to load placeholder image:");
-                        Console.WriteLine(ex.ToString());
-                    }
+                    picAIResult.Image = null;
+                    lblAIInfo.Text = "No AI result available.";
+                    btnGenerateAI.Visible = true;
                 }
 
                 Console.WriteLine("lstScans_SelectedIndexChanged completed successfully.");
@@ -259,6 +302,11 @@ namespace PPICancerRecognitionProject
             }
         }
         
+
+
+
+
+
         private void btnAddPatient_Click(object sender, EventArgs e)
         {
             using (var dialog = new AddPatientDialog(_patientRepo))
@@ -268,7 +316,7 @@ namespace PPICancerRecognitionProject
 
             LoadPatients();
         }
-        
+
         private void btnDeletePatient_Click(object sender, EventArgs e)
         {
             if (lstPatients.SelectedItem == null)
@@ -295,7 +343,7 @@ namespace PPICancerRecognitionProject
 
             LoadPatients();
         }
-        
+
         private void btnUploadScan_Click(object sender, EventArgs e)
         {
             if (lstPatients.SelectedItem == null)
@@ -331,56 +379,55 @@ namespace PPICancerRecognitionProject
             }
         }
 
-        
-        private void btnGenerateAI_Click(object sender, EventArgs e)
+        private async void btnGenerateAI_Click(object sender, EventArgs e)
         {
             if (lstScans.SelectedItem == null) return;
 
             int scanId = int.Parse(lstScans.SelectedItem.ToString().Split(':')[0]);
             var scan = _scanRepo.GetById(scanId);
 
-            // path to output folder
-            string outputDir = Path.Combine(_projectBasePath, "outputs", scan.FileCode);
-            Directory.CreateDirectory(outputDir);
-
-            string placeholderPath = Path.Combine(outputDir, $"{scan.FileCode}_ai.png");
-            
-            if (!File.Exists(placeholderPath))
+            if (scan == null)
             {
-                using (Bitmap bmp = new Bitmap(256, 256))
-                using (Graphics g = Graphics.FromImage(bmp))
-                {
-                    g.Clear(System.Drawing.Color.LightBlue);
-                    g.DrawString("AI result placeholder", new Font("Arial", 14), Brushes.Black, new System.Drawing.PointF(25, 110));
-                    bmp.Save(placeholderPath, ImageFormat.Png);
-                }
+                MessageBox.Show("Scan not found in database.");
+                return;
             }
 
-            // TODO: integrate AI Model
-            // Exemple:
-            // var resultImage = MyAIModel.Process(scanFullPath);
-            // resultImage.Save(outputPath, ImageFormat.Png);
-
-            // add placeholder to db
-            string relativeFromOutputs = Path.Combine("outputs", scan.FileCode, $"{scan.FileCode}_ai.png");
-
-            var newOutput = new AIModelOutput
+            string dicomFullPath = Path.Combine(_projectBasePath, scan.RelativePath);
+            if (!File.Exists(dicomFullPath))
             {
-                ScanID = scanId,
-                FileCode = $"{scan.FileCode}_ai",
-                RelativePath = relativeFromOutputs,
-                GenerationDate = DateTime.Now
-            };
+                MessageBox.Show("DICOM file not found.");
+                return;
+            }
 
-            picAIResult.Image?.Dispose();
-            picAIResult.Image = null;
-            string fullPath = Path.Combine(_projectBasePath, relativeFromOutputs);
-            _aiRepo.Add(newOutput, File.ReadAllBytes(fullPath));
+            btnGenerateAI.Enabled = false;
+            lblAIInfo.Text = "Processing AI model... please wait.";
 
-            MessageBox.Show("Placeholder AI result created. (TODO: integrate real AI model here)");
-            btnGenerateAI.Visible = false;
-            lstScans_SelectedIndexChanged(null, EventArgs.Empty);
+            try
+            {
+                var aiOutput = await _aiService.ProcessDicomFullAsync(scanId, scan.FileCode, dicomFullPath);
+
+                string aiFullPath = Path.Combine(_projectBasePath, aiOutput.RelativePath);
+                if (File.Exists(aiFullPath))
+                {
+                    picAIResult.Image?.Dispose();
+                    picAIResult.Image = System.Drawing.Image.FromFile(aiFullPath);
+                    lblAIInfo.Text = "AI processing complete.";
+                }
+                else
+                {
+                    lblAIInfo.Text = "AI output file not found after processing.";
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error processing AI model: {ex.Message}");
+                lblAIInfo.Text = "Error during AI processing.";
+            }
+            finally
+            {
+                btnGenerateAI.Enabled = true;
+                lstScans_SelectedIndexChanged(null, EventArgs.Empty); 
+            }
         }
-
     }
 }

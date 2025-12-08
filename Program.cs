@@ -36,6 +36,7 @@ namespace PPICancerRecognitionProject
             var patientRepo = new PatientRepository(connectionString);
             var scanRepo = new CTScanRepository(connectionString);
             var aiRepo = new AIModelOutputRepository(connectionString, "C:\\AI_Outputs_Test");
+
             
             var patient = patientRepo.GetById(1);
             Console.WriteLine($"Pacient: {patient.FirstName} {patient.LastName}, Născut: {patient.DateOfBirth:d}");
@@ -53,12 +54,12 @@ namespace PPICancerRecognitionProject
             }
 
             Console.WriteLine("Test DB completat cu succes!");
-
+            
             new DicomSetupBuilder() .RegisterServices(s => s.AddFellowOakDicom().AddImageManager<ImageSharpImageManager>()) .Build();
 
             Console.WriteLine("ImageSharp rendering backend registered.");
 
-
+            
             ApplicationConfiguration.Initialize();
             // Continue to your main form
             Application.Run(new Form1());

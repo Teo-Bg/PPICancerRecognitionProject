@@ -19,9 +19,8 @@ namespace PPICancerRecognitionProject.repository
             _modelOutputsBasePath = modelOutputsBasePath;
         }
 
-        public int Add(AIModelOutput output, byte[] imageBytes)
+        public int Add(AIModelOutput output, byte[] fileBytes)
         {
-            // Step 1️⃣: Get the scan’s FileCode to know which folder to use
             string scanFileCode = null;
             using (var connection = new SqlConnection(_connectionString))
             {
@@ -37,30 +36,28 @@ namespace PPICancerRecognitionProject.repository
             if (string.IsNullOrEmpty(scanFileCode))
                 throw new Exception($"No CT scan found with ID {output.ScanID}.");
 
-            // Step 2️⃣: Create folder if it doesn’t exist
             string scanFolder = Path.Combine(_modelOutputsBasePath, scanFileCode);
             if (!Directory.Exists(scanFolder))
                 Directory.CreateDirectory(scanFolder);
 
-            // Step 3️⃣: Determine file path
-            // Add a .png extension automatically (or adjust as needed)
-            string fileName = output.FileCode.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+            // Pentru masca, extensia este .json, nu .png
+            string fileName = output.FileCode.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
                 ? output.FileCode
-                : output.FileCode + ".png";
+                : output.FileCode + ".json";
 
             string fullFilePath = Path.Combine(scanFolder, fileName);
-            File.WriteAllBytes(fullFilePath, imageBytes);
+            File.WriteAllBytes(fullFilePath, fileBytes);
 
-            // Step 4️⃣: Store relative path
-            output.RelativePath = Path.Combine("outputs",scanFileCode, fileName);
+            output.RelativePath = Path.Combine("outputs", scanFileCode, fileName);
 
-            // Step 5️⃣: Insert into DB
             using (var connection = new SqlConnection(_connectionString))
             {
                 string insertQuery = @"
-            INSERT INTO AI_Model_Outputs (ScanID, FileCode, RelativePath, GenerationDate)
-            VALUES (@ScanID, @FileCode, @RelativePath, @GenerationDate);
-            SELECT SCOPE_IDENTITY();";
+INSERT INTO AI_Model_Outputs 
+    (ScanID, FileCode, RelativePath, GenerationDate, PredictedTypes, PredictedClass, TypeProbabilities, ClassProbabilities)
+VALUES
+    (@ScanID, @FileCode, @RelativePath, @GenerationDate, @PredictedTypes, @PredictedClass, @TypeProbabilities, @ClassProbabilities);
+SELECT SCOPE_IDENTITY();";
 
                 using (var command = new SqlCommand(insertQuery, connection))
                 {
@@ -68,6 +65,11 @@ namespace PPICancerRecognitionProject.repository
                     command.Parameters.AddWithValue("@FileCode", output.FileCode);
                     command.Parameters.AddWithValue("@RelativePath", output.RelativePath);
                     command.Parameters.AddWithValue("@GenerationDate", output.GenerationDate);
+
+                    command.Parameters.AddWithValue("@PredictedTypes", (object)output.PredictedTypes ?? DBNull.Value);
+                    command.Parameters.AddWithValue("@PredictedClass", (object)output.PredictedClass ?? DBNull.Value);
+                    command.Parameters.AddWithValue("@TypeProbabilities", (object)output.TypeProbabilities ?? DBNull.Value);
+                    command.Parameters.AddWithValue("@ClassProbabilities", (object)output.ClassProbabilities ?? DBNull.Value);
 
                     connection.Open();
                     output.OutputID = Convert.ToInt32(command.ExecuteScalar());
@@ -80,7 +82,12 @@ namespace PPICancerRecognitionProject.repository
         {
             using (var connection = new SqlConnection(_connectionString))
             {
-                string query = "SELECT OutputID, ScanID, FileCode, RelativePath, GenerationDate FROM AI_Model_Outputs WHERE OutputID = @OutputID";
+                string query = @"
+SELECT OutputID, ScanID, FileCode, RelativePath, GenerationDate, 
+       PredictedTypes, PredictedClass, TypeProbabilities, ClassProbabilities 
+FROM AI_Model_Outputs 
+WHERE OutputID = @OutputID";
+
                 using (var command = new SqlCommand(query, connection))
                 {
                     command.Parameters.AddWithValue("@OutputID", id);
@@ -96,7 +103,12 @@ namespace PPICancerRecognitionProject.repository
                                 ScanID = (int)reader["ScanID"],
                                 FileCode = (string)reader["FileCode"],
                                 RelativePath = (string)reader["RelativePath"],
-                                GenerationDate = (DateTime)reader["GenerationDate"]
+                                GenerationDate = (DateTime)reader["GenerationDate"],
+
+                                PredictedTypes = reader["PredictedTypes"] as string,
+                                PredictedClass = reader["PredictedClass"] as string,
+                                TypeProbabilities = reader["TypeProbabilities"] as string,
+                                ClassProbabilities = reader["ClassProbabilities"] as string
                             };
                         }
                     }
@@ -109,7 +121,12 @@ namespace PPICancerRecognitionProject.repository
         {
             using (var connection = new SqlConnection(_connectionString))
             {
-                string query = "SELECT OutputID, ScanID, FileCode, RelativePath, GenerationDate FROM AI_Model_Outputs WHERE FileCode = @FileCode";
+                string query = @"
+SELECT OutputID, ScanID, FileCode, RelativePath, GenerationDate,
+       PredictedTypes, PredictedClass, TypeProbabilities, ClassProbabilities
+FROM AI_Model_Outputs 
+WHERE FileCode = @FileCode";
+
                 using (var command = new SqlCommand(query, connection))
                 {
                     command.Parameters.AddWithValue("@FileCode", fileCode);
@@ -125,7 +142,12 @@ namespace PPICancerRecognitionProject.repository
                                 ScanID = (int)reader["ScanID"],
                                 FileCode = (string)reader["FileCode"],
                                 RelativePath = (string)reader["RelativePath"],
-                                GenerationDate = (DateTime)reader["GenerationDate"]
+                                GenerationDate = (DateTime)reader["GenerationDate"],
+
+                                PredictedTypes = reader["PredictedTypes"] as string,
+                                PredictedClass = reader["PredictedClass"] as string,
+                                TypeProbabilities = reader["TypeProbabilities"] as string,
+                                ClassProbabilities = reader["ClassProbabilities"] as string
                             };
                         }
                     }
@@ -139,7 +161,12 @@ namespace PPICancerRecognitionProject.repository
             var outputs = new List<AIModelOutput>();
             using (var connection = new SqlConnection(_connectionString))
             {
-                string query = "SELECT OutputID, ScanID, FileCode, RelativePath, GenerationDate FROM AI_Model_Outputs WHERE ScanID = @ScanID";
+                string query = @"
+SELECT OutputID, ScanID, FileCode, RelativePath, GenerationDate,
+       PredictedTypes, PredictedClass, TypeProbabilities, ClassProbabilities
+FROM AI_Model_Outputs 
+WHERE ScanID = @ScanID";
+
                 using (var command = new SqlCommand(query, connection))
                 {
                     command.Parameters.AddWithValue("@ScanID", scanId);
@@ -155,7 +182,12 @@ namespace PPICancerRecognitionProject.repository
                                 ScanID = (int)reader["ScanID"],
                                 FileCode = (string)reader["FileCode"],
                                 RelativePath = (string)reader["RelativePath"],
-                                GenerationDate = (DateTime)reader["GenerationDate"]
+                                GenerationDate = (DateTime)reader["GenerationDate"],
+
+                                PredictedTypes = reader["PredictedTypes"] as string,
+                                PredictedClass = reader["PredictedClass"] as string,
+                                TypeProbabilities = reader["TypeProbabilities"] as string,
+                                ClassProbabilities = reader["ClassProbabilities"] as string
                             });
                         }
                     }
