@@ -440,9 +440,8 @@ namespace PPICancerRecognitionProject
 
                     if (mask[y][x] == 1)
                     {
-                        // roșu semi-transparent peste pixelul original
                         var blended = System.Drawing.Color.FromArgb(
-                            150, // transparență (0 = transparent, 255 = opac)
+                            150, 
                             255, 0, 0
                         );
 
@@ -454,8 +453,7 @@ namespace PPICancerRecognitionProject
                     }
                 }
             }
-
-            // combinăm original + overlay
+            
             Bitmap final = new Bitmap(width, height);
             using (Graphics g = Graphics.FromImage(final))
             {
