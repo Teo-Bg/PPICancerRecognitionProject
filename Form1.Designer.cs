@@ -55,6 +55,7 @@
             picOriginal = new System.Windows.Forms.PictureBox();
             picAIResult = new System.Windows.Forms.PictureBox();
             lblAIInfo = new System.Windows.Forms.Label();
+            btnExportData = new System.Windows.Forms.Button();
             panelLeft.SuspendLayout();
             panelRight.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)picOriginal).BeginInit();
@@ -125,6 +126,7 @@
             // panelRight
             // 
             panelRight.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right));
+            panelRight.Controls.Add(btnExportData);
             panelRight.Controls.Add(lblScans);
             panelRight.Controls.Add(lstScans);
             panelRight.Controls.Add(btnUploadScan);
@@ -210,6 +212,19 @@
             lblAIInfo.TabIndex = 6;
             lblAIInfo.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             // 
+            // btnExportData
+            // 
+            btnExportData.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            btnExportData.Font = new System.Drawing.Font("Segoe UI", 9F);
+            btnExportData.Location = new System.Drawing.Point(370, 88);
+            btnExportData.Name = "btnExportData";
+            btnExportData.Size = new System.Drawing.Size(180, 35);
+            btnExportData.TabIndex = 7;
+            btnExportData.Text = "📄Export Patient Data";
+            btnExportData.UseMnemonic = false;
+            btnExportData.Visible = false;
+            btnExportData.Click += btnExportPdf_Click;
+            // 
             // Form1
             // 
             BackColor = System.Drawing.Color.WhiteSmoke;
@@ -226,6 +241,8 @@
             ((System.ComponentModel.ISupportInitialize)picAIResult).EndInit();
             ResumeLayout(false);
         }
+
+        private System.Windows.Forms.Button btnExportData;
 
         #endregion
     }
