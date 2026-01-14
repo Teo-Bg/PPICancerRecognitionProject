@@ -15,7 +15,10 @@ using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using System.Text.Json;
+using iTextSharp.text;
+using iTextSharp.text.pdf;
 namespace PPICancerRecognitionProject
+
 
 {
     public partial class Form1 : Form
@@ -26,8 +29,8 @@ namespace PPICancerRecognitionProject
         private readonly string _aiOutputPath;
         private readonly string _projectBasePath;
         private readonly AIModelService _aiService;
-        private readonly string _aiApiUrl = "http://localhost:8000/predict/";  // Setează corect URL-ul API-ului
-        private readonly string _aiApiUrl_full = "http://localhost:8000/predict-full/";
+        private readonly string _aiApiUrl = "http://localhost:8000/predict/";  
+        private readonly string _aiApiUrl_full = "http://localhost:8000/predict-full-vgg/";
 
         public Form1()
         {
@@ -62,6 +65,7 @@ namespace PPICancerRecognitionProject
         private void lstPatients_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (lstPatients.SelectedItem == null) return;
+            btnExportData.Visible = lstPatients.SelectedItem != null;
 
             lstScans.Items.Clear();
             picOriginal.Image = null;
@@ -290,6 +294,12 @@ namespace PPICancerRecognitionProject
         
 
 
+        private byte[] BitmapToBytes(Bitmap bmp)
+        {
+            using var ms = new MemoryStream();
+            bmp.Save(ms, ImageFormat.Png);
+            return ms.ToArray();
+        }
 
 
 
@@ -425,6 +435,126 @@ namespace PPICancerRecognitionProject
                 lstScans_SelectedIndexChanged(null, EventArgs.Empty); 
             }
         }
+        
+        private void btnExportPdf_Click(object sender, EventArgs e)
+        {
+            if (lstPatients.SelectedItem == null)
+                return;
+
+            int patientId = int.Parse(lstPatients.SelectedItem.ToString().Split(':')[0]);
+            var patient = _patientRepo.GetById(patientId);
+
+            var scans = _scanRepo.GetByPatientId(patientId)
+                                 .OrderBy(s => s.ScanDate)
+                                 .ToList();
+
+            if (scans.Count == 0)
+            {
+                MessageBox.Show("Pacientul nu are scanuri.");
+                return;
+            }
+
+            string safeName = $"{patient.FirstName}_{patient.LastName}".Replace(" ", "_");
+
+            using SaveFileDialog sfd = new SaveFileDialog
+            {
+                Filter = "PDF (*.pdf)|*.pdf",
+                FileName = $"Patient_{safeName}_Report.pdf"
+            };
+
+            if (sfd.ShowDialog() != DialogResult.OK)
+                return;
+
+            using FileStream fs = new FileStream(sfd.FileName, FileMode.Create);
+            
+            iTextSharp.text.Document document =
+                new iTextSharp.text.Document(iTextSharp.text.PageSize.A4, 25f, 25f, 25f, 25f);
+
+            PdfWriter.GetInstance(document, fs);
+            document.Open();
+            
+            var headerFont = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 12);
+            
+            document.Add(new Paragraph(
+                $"Patient: {patient.FirstName} {patient.LastName}",
+                headerFont));
+
+            document.Add(new Paragraph("\n"));
+            
+            System.Drawing.Size uiSize = picOriginal.Size;
+
+            foreach (var scan in scans)
+            {
+                document.Add(new Paragraph(
+                    $"Scan date: {scan.ScanDate:dd.MM.yyyy HH:mm}",
+                    headerFont));
+
+                document.Add(new Paragraph("\n"));
+
+                string dicomPath = Path.Combine(_projectBasePath, scan.RelativePath);
+                if (!File.Exists(dicomPath))
+                    continue;
+
+                var outputs = _aiRepo.GetByScanId(scan.ScanID);
+                string maskPath = outputs.Count > 0
+                    ? Path.Combine(_projectBasePath, outputs.First().RelativePath)
+                    : null;
+                
+                using Bitmap originalUi =
+                    RenderUiFinalBitmap(dicomPath, null, uiSize);
+
+                using Bitmap overlayUi =
+                    RenderUiFinalBitmap(dicomPath, maskPath, uiSize);
+
+                var origImg = iTextSharp.text.Image.GetInstance(BitmapToBytes(originalUi));
+                var overlayImg = iTextSharp.text.Image.GetInstance(BitmapToBytes(overlayUi));
+
+                origImg.ScaleToFit(250f, 250f);
+                overlayImg.ScaleToFit(250f, 250f);
+
+                origImg.Alignment = Element.ALIGN_CENTER;
+                overlayImg.Alignment = Element.ALIGN_CENTER;
+                
+                PdfPTable table = new PdfPTable(2);
+                table.WidthPercentage = 100;
+                table.SetWidths(new float[] { 1f, 1f });
+
+                table.AddCell(new PdfPCell(new Phrase("Original", headerFont))
+                {
+                    Border = iTextSharp.text.Rectangle.NO_BORDER,
+                    HorizontalAlignment = Element.ALIGN_CENTER
+                });
+
+                table.AddCell(new PdfPCell(new Phrase("AI Result", headerFont))
+                {
+                    Border = iTextSharp.text.Rectangle.NO_BORDER,
+                    HorizontalAlignment = Element.ALIGN_CENTER
+                });
+
+                table.AddCell(new PdfPCell(origImg)
+                {
+                    Border = iTextSharp.text.Rectangle.NO_BORDER,
+                    HorizontalAlignment = Element.ALIGN_CENTER
+                });
+
+                table.AddCell(new PdfPCell(overlayImg)
+                {
+                    Border = iTextSharp.text.Rectangle.NO_BORDER,
+                    HorizontalAlignment = Element.ALIGN_CENTER
+                });
+
+                document.Add(table);
+                document.Add(new Paragraph("\n\n"));
+            }
+
+            document.Close();
+            MessageBox.Show("PDF Created.");
+        }
+
+
+
+
+        
         private Bitmap ApplyMaskOverlay(Bitmap original, List<List<int>> mask)
         {
             int width = original.Width;
@@ -440,9 +570,8 @@ namespace PPICancerRecognitionProject
 
                     if (mask[y][x] == 1)
                     {
-                        // roșu semi-transparent peste pixelul original
                         var blended = System.Drawing.Color.FromArgb(
-                            150, // transparență (0 = transparent, 255 = opac)
+                            150, 
                             255, 0, 0
                         );
 
@@ -454,8 +583,7 @@ namespace PPICancerRecognitionProject
                     }
                 }
             }
-
-            // combinăm original + overlay
+            
             Bitmap final = new Bitmap(width, height);
             using (Graphics g = Graphics.FromImage(final))
             {
@@ -494,6 +622,72 @@ namespace PPICancerRecognitionProject
             return resized;
         }
 
+        private Bitmap RenderUiFinalBitmap(
+            string dicomPath,
+            string maskPath,
+            System.Drawing.Size uiSize)
+        {
+            var dicomImage = new DicomImage(dicomPath);
 
+            using var sharp = dicomImage.RenderImage().AsSharpImage();
+            using var ms = new MemoryStream();
+            sharp.Save(ms, new PngEncoder());
+            ms.Position = 0;
+
+            using Bitmap dicomBmp = new Bitmap(ms);
+            
+            float scaleX = (float)uiSize.Width / dicomBmp.Width;
+            float scaleY = (float)uiSize.Height / dicomBmp.Height;
+            float scale = Math.Min(scaleX, scaleY);
+
+            int drawW = (int)(dicomBmp.Width * scale);
+            int drawH = (int)(dicomBmp.Height * scale);
+
+            int offsetX = (uiSize.Width - drawW) / 2;
+            int offsetY = (uiSize.Height - drawH) / 2;
+            
+            Bitmap uiBmp = new Bitmap(uiSize.Width, uiSize.Height);
+            using (Graphics g = Graphics.FromImage(uiBmp))
+            {
+                g.Clear(System.Drawing.Color.Black);
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+
+                g.DrawImage(dicomBmp,
+                    new System.Drawing.Rectangle(offsetX, offsetY, drawW, drawH));
+            }
+            
+            if (string.IsNullOrEmpty(maskPath) || !File.Exists(maskPath))
+                return uiBmp;
+            
+            var mask = JsonSerializer.Deserialize<List<List<int>>>(File.ReadAllText(maskPath));
+
+            Bitmap result = new Bitmap(uiBmp);
+            using (Graphics g = Graphics.FromImage(result))
+            {
+                using Bitmap overlay = new Bitmap(drawW, drawH);
+
+                for (int y = 0; y < drawH; y++)
+                {
+                    int srcY = (int)((float)y / drawH * mask.Count);
+                    srcY = Math.Min(srcY, mask.Count - 1);
+
+                    for (int x = 0; x < drawW; x++)
+                    {
+                        int srcX = (int)((float)x / drawW * mask[0].Count);
+                        srcX = Math.Min(srcX, mask[0].Count - 1);
+
+                        if (mask[srcY][srcX] == 1)
+                        {
+                            overlay.SetPixel(x, y,
+                                System.Drawing.Color.FromArgb(150, 255, 0, 0));
+                        }
+                    }
+                }
+
+                g.DrawImage(overlay, offsetX, offsetY);
+            }
+
+            return result;
+        }
     }
 }
