@@ -374,6 +374,20 @@ namespace PPICancerRecognitionProject
                 }
             }
         }
+        
+        private void LoadScanById(int scanId)
+        {
+            var item = lstScans.Items
+                .Cast<string>()
+                .FirstOrDefault(x => x.StartsWith(scanId + ":"));
+
+            if (item == null)
+                return;
+
+            lstScans.SelectedItem = item;
+            lstScans_SelectedIndexChanged(null, EventArgs.Empty);
+        }
+
 
         private async void btnGenerateAI_Click(object sender, EventArgs e)
         {
@@ -432,8 +446,12 @@ namespace PPICancerRecognitionProject
             finally
             {
                 btnGenerateAI.Enabled = true;
-                lstScans_SelectedIndexChanged(null, EventArgs.Empty); 
+
+                lstPatients_SelectedIndexChanged(null, EventArgs.Empty);
+                
+                LoadScanById(scanId);
             }
+
         }
         
         private void btnExportPdf_Click(object sender, EventArgs e)
